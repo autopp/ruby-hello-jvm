@@ -1,12 +1,12 @@
 require 'stringio'
 
-class ClassFileReader
+class Reader
 
   #
   # @param [String] class_file_code
   #
-  def initialize(class_file_code)
-    @io = StringIO.new(class_file_code)
+  def initialize(code)
+    @io = StringIO.new(code)
   end
 
   #
@@ -50,6 +50,11 @@ class ClassFileReader
 end
 
 class ClassFile
+  OP_GETSTAITC = 0xB2
+  OP_LDC = 0x12
+  OP_INVOKEVIRTUAL = 0xB6
+  OP_RETURN = 0xB1
+
   # @return [Array<Constant>]
   attr_reader :constant_pool
 
@@ -119,12 +124,12 @@ class ClassFile
       # @return [Integer]
       attr_reader :name_index
       # @return [Integer]
-      attr_reader :descripor_index
+      attr_reader :descriptor_index
 
-      def initialize(name_index, descripor_index)
+      def initialize(name_index, descriptor_index)
         super(TAG_NAMEANDTYPE)
         @name_index = name_index
-        @descripor_index = descripor_index
+        @descriptor_index = descriptor_index
       end
     end
 
@@ -194,7 +199,7 @@ class ClassFile
   end
 end
 
-reader = ClassFileReader.new(File.read("#{ARGV[0]}.class"))
+reader = Reader.new(File.read("#{ARGV[0]}.class"))
 
 # parse magic
 magic = reader.read(4)
@@ -250,3 +255,71 @@ attributes_count = reader.read_u2
 attributes = attributes_count.times.map { reader.read_attrs }
 
 class_file = ClassFile.new(constant_pool, methods, attributes)
+
+# find main method
+main_method = class_file.methods.find do |method|
+  constant_pool[method.name_index].bytes == 'main'
+end
+
+raise 'main method is not found' if main_method.nil?
+
+# read code attribute
+code_attribute = main_method.attributes.find do |attributes|
+  constant_pool[attributes.attribute_name_index].bytes == 'Code'
+end
+
+raise 'code attribute of main method is not found' if code_attribute.nil?
+main_reader = Reader.new(code_attribute.info)
+
+max_stack = main_reader.read_u2
+max_locals = main_reader.read_u2
+code_length = main_reader.read_u4
+code = main_reader.read(code_length)
+_exception_table_length = main_reader.read_u2
+main_attributes_count = main_reader.read_u2
+main_attributes = main_attributes_count.times.map { main_reader.read_attrs }
+
+# initialize builtin classes
+classes = {
+  'java.lang.System' => {
+    'out' => {
+      'println' => ->(*args) { puts(args.first.bytes) }
+    }
+  }
+}
+
+# run main method
+stack = []
+code_reader = Reader.new(code)
+loop do
+  op_code = code_reader.read_u1
+  case op_code
+  when ClassFile::OP_GETSTAITC
+    operand = code_reader.read_u2
+    stack.push(constant_pool[operand])
+  when ClassFile::OP_LDC
+    operand = code_reader.read_u1
+    stack.push(constant_pool[constant_pool[operand].string_index])
+  when ClassFile::OP_INVOKEVIRTUAL
+    cp_info = constant_pool[code_reader.read_u2]
+    name_and_type = constant_pool[cp_info.name_and_type_index]
+
+    method_name = constant_pool[name_and_type.name_index].bytes
+    descriptor = constant_pool[name_and_type.descriptor_index].bytes
+
+    method_args = (descriptor.split(';').size - 1).times.with_object([]) do |_, args|
+      args.push(stack.pop)
+    end
+
+    context = stack.pop
+    base_class = constant_pool[constant_pool[context.class_index].name_index].bytes
+    base_class_target = constant_pool[constant_pool[context.name_and_type_index].name_index].bytes
+    class_path = base_class.tr('/', '.')
+    initiated_class = classes[class_path]
+    initiated_class[base_class_target][method_name].call(*method_args)
+  when ClassFile::OP_RETURN
+    break
+  else
+    raise "unknown op code: #{op_code}"
+  end
+end
