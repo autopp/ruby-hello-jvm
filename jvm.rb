@@ -1,7 +1,6 @@
 require 'stringio'
 
 class Reader
-
   #
   # @param [String] class_file_code
   #
@@ -29,14 +28,14 @@ class Reader
   # @return [Integer]
   #
   def read_u2
-    read(2).unpack('n').first
+    read(2).unpack1('n')
   end
 
   #
   # @return [Integer]
   #
   def read_u4
-    read(4).unpack('N').first
+    read(4).unpack1('N')
   end
 
   #
@@ -206,14 +205,14 @@ magic = reader.read(4)
 raise "magic is not found #{magic.inspect}" if magic != "\xCA\xFE\xBA\xBE".b
 
 # parse version
-major = reader.read_u2
-minor = reader.read_u2
+reader.read_u2 # major
+reader.read_u2 # minor
 
 # parse constant pool
 constant_pool_count = reader.read_u2
 
 constant_pool = [nil]
-(1...constant_pool_count).each do |i|
+(1...constant_pool_count).each do
   tag = reader.read_u1
   case tag
   when ClassFile::Constant::TAG_CLASS
@@ -236,8 +235,8 @@ constant_pool = [nil]
 end
 
 access_flags = reader.read_u2
-this_class = reader.read_u2
-super_class = reader.read_u2
+reader.read_u2 # this class
+reader.read_u2 # super class
 _interfaces_count = reader.read_u2
 _field_count = reader.read_u2
 
@@ -264,20 +263,21 @@ end
 raise 'main method is not found' if main_method.nil?
 
 # read code attribute
-code_attribute = main_method.attributes.find do |attributes|
-  constant_pool[attributes.attribute_name_index].bytes == 'Code'
+code_attribute = main_method.attributes.find do |attrs|
+  constant_pool[attrs.attribute_name_index].bytes == 'Code'
 end
 
 raise 'code attribute of main method is not found' if code_attribute.nil?
+
 main_reader = Reader.new(code_attribute.info)
 
-max_stack = main_reader.read_u2
-max_locals = main_reader.read_u2
+main_reader.read_u2 # max stack
+main_reader.read_u2 # max locals
 code_length = main_reader.read_u4
 code = main_reader.read(code_length)
 _exception_table_length = main_reader.read_u2
 main_attributes_count = main_reader.read_u2
-main_attributes = main_attributes_count.times.map { main_reader.read_attrs }
+main_attributes_count.times.map { main_reader.read_attrs } # attributes of main
 
 # initialize builtin classes
 classes = {
@@ -295,11 +295,9 @@ loop do
   op_code = code_reader.read_u1
   case op_code
   when ClassFile::OP_GETSTAITC
-    operand = code_reader.read_u2
-    stack.push(constant_pool[operand])
+    stack.push(constant_pool[code_reader.read_u2])
   when ClassFile::OP_LDC
-    operand = code_reader.read_u1
-    stack.push(constant_pool[constant_pool[operand].string_index])
+    stack.push(constant_pool[constant_pool[code_reader.read_u1].string_index])
   when ClassFile::OP_INVOKEVIRTUAL
     cp_info = constant_pool[code_reader.read_u2]
     name_and_type = constant_pool[cp_info.name_and_type_index]
