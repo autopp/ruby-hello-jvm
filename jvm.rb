@@ -212,7 +212,7 @@ reader.read_u2 # minor
 constant_pool_count = reader.read_u2
 
 constant_pool = [nil]
-(1...constant_pool_count).each do
+(constant_pool_count - 1).times do
   tag = reader.read_u1
   case tag
   when ClassFile::Constant::TAG_CLASS
