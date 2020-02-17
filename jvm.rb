@@ -237,8 +237,8 @@ end
 access_flags = reader.read_u2
 reader.read_u2 # this class
 reader.read_u2 # super class
-_interfaces_count = reader.read_u2
-_field_count = reader.read_u2
+reader.read_u2 # interfaces count
+reader.read_u2 # field count
 
 method_count = reader.read_u2
 methods = method_count.times.map do
@@ -275,7 +275,7 @@ main_reader.read_u2 # max stack
 main_reader.read_u2 # max locals
 code_length = main_reader.read_u4
 code = main_reader.read(code_length)
-_exception_table_length = main_reader.read_u2
+main_reader.read_u2 # exception table length
 main_attributes_count = main_reader.read_u2
 main_attributes_count.times.map { main_reader.read_attrs } # attributes of main
 
