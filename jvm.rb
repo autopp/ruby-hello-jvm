@@ -251,12 +251,10 @@ methods = method_count.times.map do
 end
 
 attributes_count = reader.read_u2
-attributes = attributes_count.times.map { reader.read_attrs }
-
-class_file = ClassFile.new(constant_pool, methods, attributes)
+attributes_count.times.map { reader.read_attrs }
 
 # find main method
-main_method = class_file.methods.find do |method|
+main_method = methods.find do |method|
   constant_pool[method.name_index].bytes == 'main'
 end
 
